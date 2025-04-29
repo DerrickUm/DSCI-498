@@ -6,13 +6,6 @@ This repository contains all code and supporting scripts used to fuse Sentinel-2
 2. Learns 32-dim latent features with a shallow TensorFlow/Keras autoencoder  
 3. Trains and tunes an XGBoost regressor (via Optuna) to predict fine-scale Urban Heat Island (UHI) index in NYC on July 24, 2021  
 
-## Repository Structure
-LnameFname/ ├── data/ │ └── readme_data.txt ├── ReadMe.txt ← this file ├── main.py ← orchestrates data loading, feature engineering, modeling ├── aux_1.py ← helper functions (e.g. raster-to-point mapping, index computation) ├── band_indices.py ├── landsat_data.py ├── sentinel_tiff.py └── requirements.txt
-
-shell
-Copy
-Edit
-
 ### `data/readme_data.txt`
 Describes how to download or access the raw GeoTIFF and CSV files, and where to place them under `data/` before running the code.
 
@@ -27,12 +20,7 @@ Describes how to download or access the raw GeoTIFF and CSV files, and where to 
 ## Requirements
 Create a Python 3.9+ environment and install:
 
-pip install -r requirements.txt
-
-Contents of requirements.txt include:
 nginx
-Copy
-Edit
 numpy
 pandas
 scikit-learn
