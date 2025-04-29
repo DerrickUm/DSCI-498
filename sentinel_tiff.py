@@ -1,153 +1,91 @@
-# Suppress Warnings
-import warnings
-warnings.filterwarnings('ignore')
-
 # Import necessary libraries
-import numpy as np
-import xarray as xr
-import matplotlib.pyplot as plt
-import rioxarray as rio
-import rasterio
+from pystac_client import Client  # For STAC queries
+import planetary_computer         # For signing Sentinel-2 data requests
+from odc.stac import stac_load    # For loading STAC items into an Xarray dataset
+
+import rasterio                    # For writing GeoTIFFs
 from rasterio.transform import from_bounds
-import pystac_client
-import planetary_computer
-from odc.stac import stac_load
 
-# Define the bounding box (NYC region for UHI data)
-lower_left = (40.75, -74.01)
-upper_right = (40.88, -73.86)
-bounds = (lower_left[1], lower_left[0], upper_right[1], upper_right[0])
+def define_bounds():
+    """Define the bounding box and time window."""
+    lower_left = (40.75, -74.01)
+    upper_right = (40.88, -73.86)
+    bounds = (lower_left[1], lower_left[0], upper_right[1], upper_right[0])
+    time_window = "2021-06-01/2021-09-01"
+    return bounds, time_window
 
-# Define the time window
-time_window = "2021-06-01/2021-09-01"
+def query_sentinel_data(bounds, time_window):
+    """Query Sentinel-2 data using Planetary Computer API."""
+    stac = Client.open("https://planetarycomputer.microsoft.com/api/stac/v1")
+    search = stac.search(
+        bbox=bounds, 
+        datetime=time_window,
+        collections=["sentinel-2-l2a"],
+        query={"eo:cloud_cover": {"lt": 20}},
+    )
+    items = list(search.get_items())
+    print(f'Number of Sentinel-2 scenes available: {len(items)}')
+    return items
 
-# Query Sentinel-2 Data
-stac = pystac_client.Client.open("https://planetarycomputer.microsoft.com/api/stac/v1")
+def load_sentinel_data(items, bounds):
+    """Load Sentinel-2 bands into an Xarray dataset and resample lower-resolution bands to 10m resolution."""
+    resolution = 10  # meters per pixel
+    scale = resolution / 111320.0  # degrees per pixel
 
-search = stac.search(
-    bbox=bounds, 
-    datetime=time_window,
-    collections=["sentinel-2-l2a"],
-    query={"eo:cloud_cover": {"lt": 30}},
-)
-
-items = list(search.get_items())
-print(f'Number of Sentinel-2 scenes available: {len(items)}')
-
-# Define the pixel resolution and scale for CRS 4326 (Lat/Lon)
-resolution = 10  # meters per pixel 
-scale = resolution / 111320.0  # degrees per pixel
-
-# Load Sentinel-2 Bands into Xarray
-data = stac_load(
-    items,
-    bands=["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B11", "B12"],
-    crs="EPSG:4326",
-    resolution=scale,
-    chunks={"x": 2048, "y": 2048},
-    dtype="uint16",
-    patch_url=planetary_computer.sign,
-    bbox=bounds
-)
-
-# Compute the median composite to remove cloud contamination
-median = data.median(dim="time").compute()
-
-# Function to Compute Spectral Indices
-def compute_indices(median):
-    """
-    Compute various spectral indices to improve UHI modeling.
-    """
-    # ARVI - Atmospherically Resistant Vegetation Index
-    arvi = (median.B08 - (2 * median.B04) + median.B02) / (median.B08 + (2 * median.B04) + median.B02)
-
-    # ABEI - automated built-up extraction index
-    abei = (0.312 * median.B01 +
-            0.513 * median.B02 -
-            0.086 * median.B03 -
-            0.441 * median.B04 +
-            0.052 * median.B08 -
-            0.198 * median.B11 +
-            0.278 * median.B12)
-
-    # AWEI - Automated Water Extraction Index (No Shadow Correction)
-    awei_nsh = 4 * (median.B03 - median.B11) - (0.25 * median.B08 + 2.75 * median.B12)
-
-    # AWEI - Automated Water Extraction Index (Shadow Correction)
-    awei_sh = median.B02 + 2.5 * median.B03 - 1.5 * (median.B08 + median.B11) - 0.25 * median.B12
-
-    # EVI - Enhanced Vegetation Index
-    evi = 2.5 * ((median.B08 - median.B04) / (median.B08 + 6 * median.B04 - 7.5 * median.B02 + 1))
-
-    # SAVI - Soil-Adjusted Vegetation Index (L = 0.5)
-    savi = ((median.B08 - median.B04) / (median.B08 + median.B04 + 0.5)) * 1.5
-
-    # BI - Bare Soil Index
-    bi = ((median.B11 + median.B04) - (median.B08 + median.B02)) / ((median.B11 + median.B04) + (median.B08 + median.B02))
-
-    # Return computed indices as a dictionary
-    return {"ARVI": arvi, "ABEI": abei, "AWEI_nsh": awei_nsh, "AWEI_sh": awei_sh, "EVI": evi, "SAVI": savi, "BI": bi}
-
-# Compute Spectral Indices
-indices = compute_indices(median)
-
-# Classification Tree Logic
-def classify_surface(awei_nsh, awei_sh):
-    """
-    Classify surfaces using a decision tree based on AWEI indices.
-    """
-    classification = np.zeros_like(awei_nsh)
+    try:
+        data = stac_load(
+            items,
+            bands=["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B11", "B12"],
+            crs="EPSG:4326",
+            resolution=scale,
+            chunks={"x": 2048, "y": 2048},
+            dtype="uint16",
+            patch_url=planetary_computer.sign,
+            bbox=bounds
+        )
+    except Exception as e:
+        print(f"Error loading Sentinel-2 data: {e}")
+        return None
     
-    # High albedo surfaces
-    high_albedo = awei_nsh > 0.5
-    classification[high_albedo] = 1  # Class 1: High albedo surfaces
+    # Resample lower-resolution bands (20m and 60m) to 10m resolution using bilinear interpolation
+    resample_bands = {"B05", "B06", "B07", "B8A", "B11", "B12", "B01"}  # 20m and 60m bands
+    for band in resample_bands:
+        if band in data:
+            data[band] = data[band].interp_like(data.B02, method="linear")
     
-    # Shadow/dark surfaces
-    shadow_dark = (awei_nsh <= 0.5) & (awei_sh > 0.5)
-    classification[shadow_dark] = 2  # Class 2: Shadow/dark surfaces
+    return data.median(dim="time").compute()
+
+def save_as_geotiff(filename, median, bounds):
+    """Save bands as a GeoTIFF file with float64 precision."""
+    if median is None:
+        print("No data available to save.")
+        return
+
+    height, width = median.dims["latitude"], median.dims["longitude"]
+    transform = from_bounds(bounds[0], bounds[1], bounds[2], bounds[3], width, height)
+
+    bands = ["B01", "B02", "B03", "B04", "B08", "B11", "B12"]
+    available_bands = [b for b in bands if b in median]
+
+    with rasterio.open(
+        filename, 'w', driver='GTiff', width=width, height=height, count=len(available_bands),
+        crs='EPSG:4326', transform=transform, compress='lzw', dtype='float64'
+    ) as dst:
+        for i, band in enumerate(available_bands, start=1):
+            dst.write(median[band].astype("float64"), i)
+
+    print(f"Saved GeoTIFF: {filename}")
+
+def main():
+    """Main execution function."""
+    bounds, time_window = define_bounds()
+    items = query_sentinel_data(bounds, time_window)
+    if not items:
+        print("No Sentinel-2 data found for the specified time and region.")
+        return
     
-    # Other surfaces
-    other_surfaces = (awei_nsh <= 0.5) & (awei_sh <= 0.5)
-    classification[other_surfaces] = 3  # Class 3: Other surfaces
-    
-    return classification
+    median = load_sentinel_data(items, bounds)
+    save_as_geotiff("Sentinel_Data.tiff", median, bounds)
 
-# Apply Classification Tree
-classification = classify_surface(indices["AWEI_nsh"], indices["AWEI_sh"])
-
-# Save Output as GeoTIFF
-filename = "Sentinel_ABEI_AWEI_Classification.tiff"
-
-# Get image dimensions
-height, width = median.dims["latitude"], median.dims["longitude"]
-
-# Define transformation for geo-referencing
-gt = from_bounds(lower_left[1], lower_left[0], upper_right[1], upper_right[0], width, height)
-
-# Save bands, indices, and classification to GeoTIFF
-with rasterio.open(
-    filename, 
-    'w',
-    driver='GTiff',
-    width=width,
-    height=height,
-    count=11,  # 7 bands + ABEI + AWEI_nsh + AWEI_sh + classification
-    crs='EPSG:4326',
-    transform=gt,
-    compress='lzw',
-    dtype='float32'
-) as dst:
-    dst.write(median.B01, 1)
-    dst.write(median.B02, 2)
-    dst.write(median.B03, 3)
-    dst.write(median.B04, 4)
-    dst.write(median.B08, 5)
-    dst.write(median.B11, 6)
-    dst.write(median.B12, 7)
-    dst.write(indices["ARVI"], 8)
-    dst.write(indices["ABEI"], 9)
-    dst.write(indices["AWEI_nsh"], 10)
-    dst.write(indices["AWEI_sh"], 11)
-    dst.write(classification, 12)
-
-print("Saved GeoTIFF with Sentinel-2 bands, indices, and classification: Sentinel_ABEI_AWEI_Classification.tiff")
+if __name__ == "__main__":
+    main()

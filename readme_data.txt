@@ -1,0 +1,1 @@
+All data is included in here. Microsoft's planetary API will get the tiffs, the only thing you need to read in is the training data /data/Training_data_uhi_index_2025-02-18.csv.
