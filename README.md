@@ -1,21 +1,75 @@
-# DSCI-498
-Git repo for DSCI-498 project incorporating EY's Open Data Science Challenge
+# Harnessing Generative AI and Remote Sensing for Urban Heat Island Analysis
 
-The usage of generative models in solving critical issues of climate and sustainability is in its infancy stages. This project seeks to apply contemporary advancements in machine learning and generative artificial intelligence with the goal of discerning key factors that contribute to the development of heat island hotspots, and foster further awareness of the applications of machine learning and generative modeling in critical societal issues. For context, the urban heat island effect is a phenomenon that occurs when there are drastic temperature variations between rural and urban areas, which can exceed 10-degrees Celsius, and have severe effects on vulnerable communities, especially young children, older adults, laborers, and other communities. Using near-surface air temperature data from July 24th, 2021, a machine learning model will be developed to predict heat island hotspots in urban locations, and discern the root causes.
+## Project Description
+This repository contains all code and supporting scripts used to fuse Sentinel-2 optical imagery, Landsat-8 thermal data, and ground-based UHI traverses into a machine-learning pipeline that:
+1. Computes spectral indices and water masks  
+2. Learns 32-dim latent features with a shallow TensorFlow/Keras autoencoder  
+3. Trains and tunes an XGBoost regressor (via Optuna) to predict fine-scale Urban Heat Island (UHI) index in NYC on July 24, 2021  
 
-Data Description:
-- Target Dataset:
-  - Near-surface air temperature data in an index format was collected on 24 July 2021 across the Bronx and Manhattan regions of New York City in the United States. The data was collected in the afternoon between 3:00 pm and 4:00 pm. This dataset includes time stamps, traverse points (latitude and longitude) and the corresponding Urban Heat Island (UHI) Index values for 11229 data points. These UHI Index values are the target parameters.
-- Feature Datasets:
-  - European Sentinel-2 optical satellite data:
-    - The launch of the European Copernicus Sentinel-2 missions in 2015 and 2017 provides optical data at 10-meter spatial resolution and a revisit every 10 days with one mission and every 5 days with two missions. This free and open data is readily available from the Microsoft Planetary Computer (https://planetarycomputer.microsoft.com/catalog). But optical data cannot penetrate clouds, so it is necessary to filter out clouds or select scenes that have very low levels of cloud cover. For this challenge, we have provided a sample Sentinel-2 Python notebook that selects low-cloud scenes and creates a median mosaic without cloud contamination. This product can be used to assess the impacts of vegetation extent, water, or urban density on urban heating.
-  - NASA Landsat optical satellite data:
-    - NASA’s Landsat mission has been in continuous operation since 1984. This mission includes a unique thermal infrared sensor that can measure Land Surface Temperature (LST). With two missions available at any given time, this data is freely available every 8 days for the entire world from the Microsoft Planetary Computer (see link above). This data has been widely used to assess UHI variations in many studies, but its limitations should be considered. For example, LST only measures the surface temperature of what can be seen from space. That includes tops of buildings, open streets or open land areas. It does not reflect the air temperature conditions near the surface where humans exist. The coarse resolution of the LST product (100 meters) often mixes surface responses from tops of buildings and open roads or land which adds error to the data. In addition, the accuracy of the LST data depends strongly on corrections for atmospheric effects and an accurate estimate of surface emissivity. Finally, one needs to consider the timing of the data product. For our data challenge case, no Landsat data is available on the same day as the ground data collection. Also, the Landsat data acquisition time is about 11:30 am which does not exactly match the time of the day when ground traverse data was collected (3:00 pm to 4:00 pm). 
-  - Building footprints of the Bronx and Manhattan regions:
-    - Many studies suggest that the density of buildings in a city influences ground temperatures and ultimately contribute to the UHI issue. This effect is typically driven by buildings blocking the flow of air and adding waste heat.
-  - Detailed local weather dataset of the Bronx and Manhattan regions on 24 July 2021
-- Validation Dataset:
-  - known UHI index values (validation dataset) for a portion of the region that is not included in the target dataset. 
+## Repository Structure
+LnameFname/ ├── data/ │ └── readme_data.txt ├── ReadMe.txt ← this file ├── main.py ← orchestrates data loading, feature engineering, modeling ├── aux_1.py ← helper functions (e.g. raster-to-point mapping, index computation) ├── band_indices.py ├── landsat_data.py ├── sentinel_tiff.py └── requirements.txt
 
-Goal of the Project: 
-  Develop a digital model to predict the locations and severity of the UHI effect and to understand the drivers of this phenomenon. This micro-scale machine learning and AI model will be developed using near-surface air temperatures, building footprint data, weather data, and optical satellite data to identify vegetation and water proximity and surface state. A secondary goal of the challenge is to address the practical application of the output models for local decision-makers, scaling such solutions to other cities around the world, and considerations for additional datasets that could improve model accuracy and evaluate socioeconomic impact.
+shell
+Copy
+Edit
+
+### `data/readme_data.txt`
+Describes how to download or access the raw GeoTIFF and CSV files, and where to place them under `data/` before running the code.
+
+## Data Sources
+- **Ground traverses**: CSV of 11,229 lat/lon points with near-surface air temperature UHI Index (3–4 pm, July 24 2021, Bronx & Manhattan)  
+  - `Dataset/Training_data_uhi_index_2025-02-18.csv`  
+- **Sentinel-2 optical**: 10 m median mosaic, low-cloud scenes  
+- **Landsat-8 thermal (TIRS)**: 100 m Land Surface Temperature  
+
+> See `data/readme_data.txt` for download URLs and placement instructions.
+
+## Requirements
+Create a Python 3.9+ environment and install:
+
+pip install -r requirements.txt
+
+Contents of requirements.txt include:
+nginx
+Copy
+Edit
+numpy
+pandas
+scikit-learn
+optuna
+tensorflow
+xgboost
+xarray
+rioxarray
+geopandas
+rasterio
+pyproj
+pystac-client
+planetary-computer
+odc-stac
+stackstac
+tqdm
+shap
+### How to Run
+Unzip & navigate
+unzip ShortTitle_LnameFname.zip
+cd LnameFname
+Populate data/
+Follow data/readme_data.txt to download:
+UHI CSV
+Sentinel-2 GeoTIFF
+Landsat-8 GeoTIFF
+Place them under data/ exactly as named.
+Install dependencies
+pip install -r requirements.txt
+Run the main pipeline
+main_submission.ipynb
+This will:
+Load and preprocess raw data
+Compute spectral indices & masks
+Train autoencoder and extract latent features
+Tune and train XGBoost with Optuna
+Output uhi_data.csv, model artifacts, and evaluation metrics
+Inspect results
+Check output/ (created by main.py) for logs, plots, and the final submission.csv
+Review feature importance plots and R² scores printed to console
